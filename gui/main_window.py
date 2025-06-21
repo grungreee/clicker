@@ -1,8 +1,9 @@
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QPushButton, QFrame, QTabWidget, QLabel,
                              QSizePolicy, QLineEdit)
 from PyQt5.QtCore import Qt, QSize
+from utils.requests import login, register
 
 
 class Clicker(QMainWindow):
@@ -10,6 +11,8 @@ class Clicker(QMainWindow):
         super().__init__()
         self.total_label = None
         self.clicks: int = 0
+        self.username_entry = None
+        self.password_entry = None
 
         self.setWindowTitle("Camel Clicker")
         self.setGeometry(100, 100, 700, 500)
@@ -37,49 +40,6 @@ class Clicker(QMainWindow):
                 self.setStyleSheet(file.read())
         except FileNotFoundError:
             print("style.css file is not found")
-
-    def create_account_tab(self):
-        account_widget = QWidget()
-
-        main_layout = QVBoxLayout(account_widget)
-        account_widget.setLayout(main_layout)
-
-        title_label = QLabel("Account")
-        title_label.setAlignment(Qt.AlignLeft)
-        main_layout.addWidget(title_label)
-
-        main_layout.addStretch()
-        account_layout = QVBoxLayout()
-        account_layout.setAlignment(Qt.AlignHCenter)
-        main_layout.addLayout(account_layout)
-
-        account_frame = QFrame()
-        account_frame.setObjectName("frame")
-        account_frame.setFixedSize(300, 150)
-        account_layout.addWidget(account_frame)
-        main_layout.addStretch()
-
-        account_layout = QVBoxLayout(account_frame)
-
-        username_entry = QLineEdit()
-        username_entry.setPlaceholderText("Username")
-        account_layout.addWidget(username_entry)
-
-        password_entry = QLineEdit()
-        password_entry.setPlaceholderText("Password")
-        password_entry.setEchoMode(QLineEdit.Password)
-        account_layout.addWidget(password_entry)
-
-        buttons_layout = QHBoxLayout()
-        account_layout.addLayout(buttons_layout)
-
-        login_button = QPushButton("Login")
-        buttons_layout.addWidget(login_button)
-
-        register_button = QPushButton("Register")
-        buttons_layout.addWidget(register_button)
-
-        self.tab_widget.addTab(account_widget, "Account")
 
     def create_clicker_tab(self):
         clicker_widget = QWidget()
@@ -142,6 +102,53 @@ class Clicker(QMainWindow):
         clicker_layout.addWidget(click_button)
 
         self.tab_widget.addTab(clicker_widget, "Clicker")
+
+    def create_account_tab(self):
+        account_widget = QWidget()
+
+        main_layout = QVBoxLayout(account_widget)
+        account_widget.setLayout(main_layout)
+
+        title_label = QLabel("Account")
+        title_label.setAlignment(Qt.AlignLeft)
+        main_layout.addWidget(title_label)
+
+        main_layout.addStretch()
+        account_layout = QVBoxLayout()
+        account_layout.setAlignment(Qt.AlignHCenter)
+        main_layout.addLayout(account_layout)
+
+        account_frame = QFrame()
+        account_frame.setObjectName("frame")
+        account_frame.setFixedSize(300, 150)
+        account_layout.addWidget(account_frame)
+        main_layout.addStretch()
+
+        account_layout = QVBoxLayout(account_frame)
+
+        username_entry = QLineEdit()
+        username_entry.setPlaceholderText("Username")
+        account_layout.addWidget(username_entry)
+
+        password_entry = QLineEdit()
+        password_entry.setPlaceholderText("Password")
+        password_entry.setEchoMode(QLineEdit.Password)
+        account_layout.addWidget(password_entry)
+
+        buttons_layout = QHBoxLayout()
+        account_layout.addLayout(buttons_layout)
+
+        login_button = QPushButton("Login")
+        login_button.clicked.connect(  # type: ignore
+            lambda: login(username_entry.text(), password_entry.text()))
+        buttons_layout.addWidget(login_button)
+
+        register_button = QPushButton("Register")
+        register_button.clicked.connect(  # type: ignore
+            lambda: register(username_entry.text(), password_entry.text()))
+        buttons_layout.addWidget(register_button)
+
+        self.tab_widget.addTab(account_widget, "Account")
 
     def create_upgrades_tab(self):
         """Создает вкладку Upgrades"""

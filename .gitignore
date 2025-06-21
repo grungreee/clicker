@@ -1,2 +1,4 @@
-data.json
+/data.json
 /.idea
+/server/.env
+/test.py

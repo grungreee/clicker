@@ -1,0 +1,6 @@
+pyqt5
+mysql-connector-python
+fastapi
+pydantic
+python-dotenv
+requests

@@ -1,8 +1,11 @@
 import os
 import json
+from utils.requests import login
 
 
 def get_data() -> dict:
+    check_data_file()
+
     with open("data.json", "r") as file:
         data: dict = json.load(file)
 
@@ -21,11 +24,11 @@ def check_data_file() -> None:
         with open("data.json", "w") as file:
             json.dump(template, file, indent=4)
     else:
-        data: dict = get_data()
+        with open("data.json", "r") as file:
+            data: dict = json.load(file)
 
         if "username" not in data or "password" not in data:
             os.remove("data.json")
             check_data_file()
-        else:
-            pass
-
+        elif data["username"] is not None and data["password"] is not None:
+            response = login(data["username"], data["password"])
