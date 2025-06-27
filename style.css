@@ -44,7 +44,6 @@ QLineEdit {
     color: #4a2c2c;
 }
 
-/* Убираем эффект вырастания у вкладок */
 QTabWidget::pane {
     border: 2px solid #f08989;
     border-radius: 10px;

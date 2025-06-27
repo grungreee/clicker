@@ -7,7 +7,8 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
 from PyQt5.QtCore import Qt, QSize, QTimer
 from utils.file_operations import write_account_data, hash_password, check_all
 from utils.requests import authenticate, do_request
-from utils.handle_signals import show_info, show_error, update_account_tab, start_sync, stop_sync
+from utils.handle_signals import (show_info, show_error, update_account_tab,
+                                  update_upgrades_tab, start_sync, stop_sync, load_upgrades)
 
 
 class Clicker(QMainWindow):
@@ -17,17 +18,23 @@ class Clicker(QMainWindow):
         self.sync_timer = QTimer()
         self.sync_timer.timeout.connect(lambda: threading.Thread(target=self.sync_data).start())  # type: ignore
 
+        self.prestige = None
         self.coins_label = None
         self.per_sec_label = None
         self.total_label = None
         self.username_entry = None
         self.password_entry = None
+        self.clicks_layout = None
+        self.multiplayer_layout = None
 
         self.camel_coins: int = 0
         self.server_clicks: int = 0
         self.local_clicks: int = 0
         self.delta_clicks: int = 0
 
+        self.upgrades: dict = {}
+
+        self.setWindowIcon(QIcon("assets/camel.png"))
         self.setWindowTitle("Camel Clicker")
         self.setGeometry(100, 100, 700, 500)
 
@@ -58,6 +65,8 @@ class Clicker(QMainWindow):
     def on_tab_changed(self, index: int) -> None:
         if self.tab_widget.tabText(index) == "Account":
             update_account_tab()
+        elif self.tab_widget.tabText(index) == "Upgrades":
+            update_upgrades_tab()
 
     def create_clicker_tab(self):
         clicker_widget = QWidget()
@@ -97,6 +106,10 @@ class Clicker(QMainWindow):
         self.per_sec_label.setAlignment(Qt.AlignLeft)
         stats_layout.addWidget(self.per_sec_label)
 
+        self.prestige = QLabel("Prestige: 0")
+        self.prestige.setAlignment(Qt.AlignLeft)
+        stats_layout.addWidget(self.prestige)
+
         clicker_layout = QVBoxLayout()
         clicker_layout.setContentsMargins(10, 10, 10, 10)
         content_layout.addLayout(clicker_layout, 1)
@@ -112,7 +125,10 @@ class Clicker(QMainWindow):
 
     def create_upgrades_tab(self) -> None:
         upgrades_widget = QWidget()
+        self.create_upgrades_tab_content(upgrades_widget)
+        self.tab_widget.addTab(upgrades_widget, "Upgrades")
 
+    def create_upgrades_tab_content(self, upgrades_widget: QWidget) -> None:
         main_layout = QVBoxLayout(upgrades_widget)
         main_layout.setContentsMargins(10, 10, 5, 5)
         upgrades_widget.setLayout(main_layout)
@@ -130,46 +146,56 @@ class Clicker(QMainWindow):
         multiplayer_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         content_layout.addWidget(multiplayer_frame, 1)
 
-        multiplayer_layout = QVBoxLayout(multiplayer_frame)
+        self.multiplayer_layout = QVBoxLayout(multiplayer_frame)
         multiplayer_label = QLabel("Multiplayer Upgrades")
         multiplayer_label.setAlignment(Qt.AlignLeft)
-        multiplayer_layout.addWidget(multiplayer_label)
-
-        # Пример апгрейдов для multiplayer
-        multiplayer_upgrades = [
-            {"name": "Double Coins", "cost": 50},
-            {"name": "Triple Coins", "cost": 150}
-        ]
-
-        for upgrade in multiplayer_upgrades:
-            button = QPushButton(f'{upgrade["name"]} - {upgrade["cost"]} 🪙')
-            button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            button.clicked.connect(lambda _, u=upgrade: self.buy_upgrade(u))
-            multiplayer_layout.addWidget(button)
+        self.multiplayer_layout.addWidget(multiplayer_label)
 
         clicks_frame = QFrame()
         clicks_frame.setObjectName("frame")
         clicks_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         content_layout.addWidget(clicks_frame, 1)
 
-        clicks_layout = QVBoxLayout(clicks_frame)
+        self.clicks_layout = QVBoxLayout(clicks_frame)
         clicks_label = QLabel("Clicks per Second")
         clicks_label.setAlignment(Qt.AlignLeft)
-        clicks_layout.addWidget(clicks_label)
+        self.clicks_layout.addWidget(clicks_label)
 
-        # Пример апгрейдов для автокликов
-        click_upgrades = [
-            {"name": "Auto Clicker I", "cost": 100},
-            {"name": "Auto Clicker II", "cost": 250}
-        ]
+        if globals.account is not None:
+            threading.Thread(target=self.get_upgrades).start()
 
-        for upgrade in click_upgrades:
-            button = QPushButton(f'{upgrade["name"]} - {upgrade["cost"]} 🪙')
-            button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            button.clicked.connect(lambda _, u=upgrade: self.buy_upgrade(u))
-            clicks_layout.addWidget(button)
+    @staticmethod
+    def get_upgrades() -> None:
+        response = do_request("get_upgrades", data=globals.account, background=False)
 
-        self.tab_widget.addTab(upgrades_widget, "Upgrades")
+        if response[0] == 200:
+            user_upgrades: dict = response[1]["user_upgrades"]
+            all_upgrades: dict = response[1]["all_upgrades"]
+
+            load_upgrades(user_upgrades, all_upgrades)
+
+    def load_upgrades(self, user_upgrades: dict, all_upgrades: dict) -> None:
+        for id_, upgrade in all_upgrades.items():
+            layout = QHBoxLayout()
+            layout.setSpacing(10)
+
+            button = QPushButton(f"{upgrade["name"]}"
+                                 f"{f"({user_upgrades[id_]["count"]} obtained)" if id_ in user_upgrades else ""}")
+            button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
+            label = QLabel(f"Price: {upgrade['cost']} 🪙")
+
+            label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            label.setFixedWidth(200)
+            label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+
+            layout.addWidget(button)
+            layout.addWidget(label)
+
+            if upgrade["type"] == "click":
+                self.clicks_layout.addLayout(layout)
+            elif upgrade["type"] == "auto":
+                self.multiplayer_layout.addLayout(layout)
 
     def create_account_tab(self) -> None:
         account_widget = QWidget()
@@ -239,6 +265,26 @@ class Clicker(QMainWindow):
                 self.create_account_tab_content(account_widget)
                 break
 
+    def update_upgrades_tab(self) -> None:
+        for i in range(self.tab_widget.count()):
+            if self.tab_widget.tabText(i) == "Upgrades":
+                upgrades_widget = self.tab_widget.widget(i)
+
+                old_layout = upgrades_widget.layout()
+                if old_layout is not None:
+                    self._delete_layout(old_layout)
+
+                self.create_upgrades_tab_content(upgrades_widget)
+                break
+
+    def clear_layout(self, layout):
+        while layout.count():
+            child = layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+            elif child.layout():
+                self.clear_layout(child.layout())
+
     def _delete_layout(self, layout: QVBoxLayout) -> None:
         while layout.count():
             child = layout.takeAt(0)
@@ -254,7 +300,7 @@ class Clicker(QMainWindow):
         self.camel_coins += 1
 
         self.total_label.setText(f"Total Clicks: {self.local_clicks}")
-        self.coins_label.setText(f"Total CamelCoins: {self.camel_coins} 🪙")
+        self.coins_label.setText(f"CamelCoins: {self.camel_coins} 🪙")
 
     def sync_data(self, background: bool = True) -> None:
         data: dict = {
@@ -276,7 +322,7 @@ class Clicker(QMainWindow):
             self.camel_coins = server_stats["camel_coins"] + self.delta_clicks
 
             self.total_label.setText(f"Total Clicks: {self.local_clicks}")
-            self.coins_label.setText(f"Total CamelCoins: {self.camel_coins} 🪙")
+            self.coins_label.setText(f"CamelCoins: {self.camel_coins} 🪙")
 
     def login(self) -> None:
         def on_success(_=None) -> None:
@@ -328,4 +374,3 @@ class Clicker(QMainWindow):
         if globals.account is not None:
             self.sync_data(background=False)
         super().closeEvent(event)
-
