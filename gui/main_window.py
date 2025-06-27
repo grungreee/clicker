@@ -42,6 +42,7 @@ class Clicker(QMainWindow):
         self.tab_widget.setObjectName("tab_widget")
 
         self.create_clicker_tab()
+        self.create_upgrades_tab()
         self.create_account_tab()
 
         main_layout.addWidget(self.tab_widget)
@@ -80,36 +81,25 @@ class Clicker(QMainWindow):
 
         content_layout = QHBoxLayout(content_frame)
 
-        stats_frame = QFrame()
-        stats_frame.setObjectName("frame")
-        content_layout.addWidget(stats_frame, 1)
-
-        stats_layout = QVBoxLayout(stats_frame)
-
-        stats_label = QLabel("Stats")
-        stats_label.setAlignment(Qt.AlignCenter)
-        stats_layout.addWidget(stats_label)
-        stats_layout.addStretch()
+        stats_layout = QVBoxLayout()
+        stats_layout.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+        content_layout.addLayout(stats_layout, 1)
 
         self.total_label = QLabel("Total Clicks: 0")
-        self.total_label.setAlignment(Qt.AlignCenter)
+        self.total_label.setAlignment(Qt.AlignLeft)
         stats_layout.addWidget(self.total_label)
 
-        self.coins_label = QLabel("Total CamelCoins: 0")
-        self.coins_label.setAlignment(Qt.AlignCenter)
+        self.coins_label = QLabel("Total CamelCoins: 0 🪙")
+        self.coins_label.setAlignment(Qt.AlignLeft)
         stats_layout.addWidget(self.coins_label)
 
-        self.per_sec_label = QLabel("CamelCoins per seconds: 0")
-        self.per_sec_label.setAlignment(Qt.AlignCenter)
+        self.per_sec_label = QLabel("CamelCoins per seconds: 0 🪙")
+        self.per_sec_label.setAlignment(Qt.AlignLeft)
         stats_layout.addWidget(self.per_sec_label)
-        stats_layout.addStretch()
 
-        clicker_frame = QFrame()
-        clicker_frame.setObjectName("frame")
-        content_layout.addWidget(clicker_frame, 1)
-
-        clicker_layout = QVBoxLayout(clicker_frame)
+        clicker_layout = QVBoxLayout()
         clicker_layout.setContentsMargins(10, 10, 10, 10)
+        content_layout.addLayout(clicker_layout, 1)
 
         click_button = QPushButton()
         click_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -119,6 +109,67 @@ class Clicker(QMainWindow):
         clicker_layout.addWidget(click_button)
 
         self.tab_widget.addTab(clicker_widget, "Clicker")
+
+    def create_upgrades_tab(self) -> None:
+        upgrades_widget = QWidget()
+
+        main_layout = QVBoxLayout(upgrades_widget)
+        main_layout.setContentsMargins(10, 10, 5, 5)
+        upgrades_widget.setLayout(main_layout)
+
+        title_label = QLabel("Upgrades")
+        title_label.setAlignment(Qt.AlignLeft)
+        main_layout.addWidget(title_label)
+
+        content_layout = QHBoxLayout()
+        content_layout.setContentsMargins(0, 10, 5, 5)
+        main_layout.addLayout(content_layout)
+
+        multiplayer_frame = QFrame()
+        multiplayer_frame.setObjectName("frame")
+        multiplayer_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        content_layout.addWidget(multiplayer_frame, 1)
+
+        multiplayer_layout = QVBoxLayout(multiplayer_frame)
+        multiplayer_label = QLabel("Multiplayer Upgrades")
+        multiplayer_label.setAlignment(Qt.AlignLeft)
+        multiplayer_layout.addWidget(multiplayer_label)
+
+        # Пример апгрейдов для multiplayer
+        multiplayer_upgrades = [
+            {"name": "Double Coins", "cost": 50},
+            {"name": "Triple Coins", "cost": 150}
+        ]
+
+        for upgrade in multiplayer_upgrades:
+            button = QPushButton(f'{upgrade["name"]} - {upgrade["cost"]} 🪙')
+            button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            button.clicked.connect(lambda _, u=upgrade: self.buy_upgrade(u))
+            multiplayer_layout.addWidget(button)
+
+        clicks_frame = QFrame()
+        clicks_frame.setObjectName("frame")
+        clicks_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        content_layout.addWidget(clicks_frame, 1)
+
+        clicks_layout = QVBoxLayout(clicks_frame)
+        clicks_label = QLabel("Clicks per Second")
+        clicks_label.setAlignment(Qt.AlignLeft)
+        clicks_layout.addWidget(clicks_label)
+
+        # Пример апгрейдов для автокликов
+        click_upgrades = [
+            {"name": "Auto Clicker I", "cost": 100},
+            {"name": "Auto Clicker II", "cost": 250}
+        ]
+
+        for upgrade in click_upgrades:
+            button = QPushButton(f'{upgrade["name"]} - {upgrade["cost"]} 🪙')
+            button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            button.clicked.connect(lambda _, u=upgrade: self.buy_upgrade(u))
+            clicks_layout.addWidget(button)
+
+        self.tab_widget.addTab(upgrades_widget, "Upgrades")
 
     def create_account_tab(self) -> None:
         account_widget = QWidget()
@@ -203,7 +254,7 @@ class Clicker(QMainWindow):
         self.camel_coins += 1
 
         self.total_label.setText(f"Total Clicks: {self.local_clicks}")
-        self.coins_label.setText(f"Total CamelCoins: {self.camel_coins}")
+        self.coins_label.setText(f"Total CamelCoins: {self.camel_coins} 🪙")
 
     def sync_data(self, background: bool = True) -> None:
         data: dict = {
@@ -225,7 +276,7 @@ class Clicker(QMainWindow):
             self.camel_coins = server_stats["camel_coins"] + self.delta_clicks
 
             self.total_label.setText(f"Total Clicks: {self.local_clicks}")
-            self.coins_label.setText(f"Total CamelCoins: {self.camel_coins}")
+            self.coins_label.setText(f"Total CamelCoins: {self.camel_coins} 🪙")
 
     def login(self) -> None:
         def on_success(_=None) -> None:
@@ -272,3 +323,9 @@ class Clicker(QMainWindow):
         write_account_data(None, None)
         globals.account = None
         update_account_tab()
+
+    def closeEvent(self, event):
+        if globals.account is not None:
+            self.sync_data(background=False)
+        super().closeEvent(event)
+
