@@ -6,13 +6,13 @@ from utils.handle_signals import handle_signals
 
 
 def run_app() -> None:
-    handle_signals()
     globals.window.show()
-    threading.Thread(target=check_data_file).start()
     sys.exit(globals.app.exec_())
 
 
 def main() -> None:
+    handle_signals()
+    threading.Thread(target=check_data_file).start()
     run_app()
 
 

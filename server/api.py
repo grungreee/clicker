@@ -34,8 +34,8 @@ db = mysql.connector.connect(
 cursor = db.cursor()
 cursor.execute(
     "CREATE TABLE IF NOT EXISTS users ("
-    "username VARCHAR(50) PRIMARY KEY,"
-    "password VARCHAR(50) NOT NULL,"
+    "username VARCHAR(255) PRIMARY KEY,"
+    "password VARCHAR(255) NOT NULL,"
     "clicks INTEGER DEFAULT 0,"
     "camel_coins INTEGER DEFAULT 0"
     ")"

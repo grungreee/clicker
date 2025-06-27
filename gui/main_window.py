@@ -1,9 +1,12 @@
+import globals
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QPushButton, QFrame, QTabWidget, QLabel,
                              QSizePolicy, QLineEdit)
 from PyQt5.QtCore import Qt, QSize
-from utils.requests import login, register
+from utils.file_operations import write_account_data, hash_password, check_all
+from utils.requests import authenticate
+from utils.handle_signals import show_info, show_error, update_account_tab
 
 
 class Clicker(QMainWindow):
@@ -24,12 +27,11 @@ class Clicker(QMainWindow):
         main_layout.setContentsMargins(5, 5, 5, 5)
 
         self.tab_widget = QTabWidget()
+        self.tab_widget.currentChanged.connect(self.on_tab_changed)  # type: ignore
         self.tab_widget.setObjectName("tab_widget")
 
         self.create_clicker_tab()
         self.create_account_tab()
-        self.create_upgrades_tab()
-        self.create_leaderboard_tab()
 
         main_layout.addWidget(self.tab_widget)
         self.load_stylesheet_from_file()
@@ -40,6 +42,10 @@ class Clicker(QMainWindow):
                 self.setStyleSheet(file.read())
         except FileNotFoundError:
             print("style.css file is not found")
+
+    def on_tab_changed(self, index: int) -> None:
+        if self.tab_widget.tabText(index) == "Account":
+            update_account_tab()
 
     def create_clicker_tab(self):
         clicker_widget = QWidget()
@@ -103,9 +109,12 @@ class Clicker(QMainWindow):
 
         self.tab_widget.addTab(clicker_widget, "Clicker")
 
-    def create_account_tab(self):
+    def create_account_tab(self) -> None:
         account_widget = QWidget()
+        self.create_account_tab_content(account_widget)
+        self.tab_widget.addTab(account_widget, "Account")
 
+    def create_account_tab_content(self, account_widget: QWidget) -> None:
         main_layout = QVBoxLayout(account_widget)
         account_widget.setLayout(main_layout)
 
@@ -125,88 +134,101 @@ class Clicker(QMainWindow):
         main_layout.addStretch()
 
         account_layout = QVBoxLayout(account_frame)
+        account_layout.setAlignment(Qt.AlignCenter)
 
-        username_entry = QLineEdit()
-        username_entry.setPlaceholderText("Username")
-        account_layout.addWidget(username_entry)
+        if globals.account is None:
+            self.username_entry = QLineEdit()
+            self.username_entry.setPlaceholderText("Username")
+            account_layout.addWidget(self.username_entry)
 
-        password_entry = QLineEdit()
-        password_entry.setPlaceholderText("Password")
-        password_entry.setEchoMode(QLineEdit.Password)
-        account_layout.addWidget(password_entry)
+            self.password_entry = QLineEdit()
+            self.password_entry.setPlaceholderText("Password")
+            self.password_entry.setEchoMode(QLineEdit.Password)
+            account_layout.addWidget(self.password_entry)
 
-        buttons_layout = QHBoxLayout()
-        account_layout.addLayout(buttons_layout)
+            buttons_layout = QHBoxLayout()
+            account_layout.addLayout(buttons_layout)
 
-        login_button = QPushButton("Login")
-        login_button.clicked.connect(  # type: ignore
-            lambda: login(username_entry.text(), password_entry.text()))
-        buttons_layout.addWidget(login_button)
+            login_button = QPushButton("Login")
+            login_button.clicked.connect(self.login)  # type: ignore
+            buttons_layout.addWidget(login_button)
 
-        register_button = QPushButton("Register")
-        register_button.clicked.connect(  # type: ignore
-            lambda: register(username_entry.text(), password_entry.text()))
-        buttons_layout.addWidget(register_button)
+            register_button = QPushButton("Register")
+            register_button.clicked.connect(self.register)  # type: ignore
+            buttons_layout.addWidget(register_button)
+        else:
+            username_label = QLabel(f"Logged in as: {globals.account[0]}")
+            username_label.setAlignment(Qt.AlignCenter)
+            account_layout.addWidget(username_label)
 
-        self.tab_widget.addTab(account_widget, "Account")
+            logout_button = QPushButton("Logout")
+            logout_button.clicked.connect(self.logout)  # type: ignore
+            account_layout.addWidget(logout_button)
 
-    def create_upgrades_tab(self):
-        """Создает вкладку Upgrades"""
-        upgrades_widget = QWidget()
-        upgrades_widget.setObjectName("upgrades_tab")
+    def update_account_tab(self) -> None:
+        for i in range(self.tab_widget.count()):
+            if self.tab_widget.tabText(i) == "Account":
+                account_widget = self.tab_widget.widget(i)
 
-        layout = QVBoxLayout(upgrades_widget)
+                old_layout = account_widget.layout()
+                if old_layout is not None:
+                    self._delete_layout(old_layout)
 
-        # Пример содержимого для вкладки Upgrades
-        title_label = QLabel("Upgrades Tab")
-        title_label.setAlignment(Qt.AlignCenter)
+                self.create_account_tab_content(account_widget)
+                break
 
-        # Примеры апгрейдов
-        upgrade1_button = QPushButton("Auto Clicker - 100 coins")
-        upgrade1_button.setObjectName("upgrade1_button")
-
-        upgrade2_button = QPushButton("Double Click - 250 coins")
-        upgrade2_button.setObjectName("upgrade2_button")
-
-        upgrade3_button = QPushButton("Triple Click - 500 coins")
-        upgrade3_button.setObjectName("upgrade3_button")
-
-        layout.addWidget(title_label)
-        layout.addWidget(upgrade1_button)
-        layout.addWidget(upgrade2_button)
-        layout.addWidget(upgrade3_button)
-        layout.addStretch()
-
-        self.tab_widget.addTab(upgrades_widget, "Upgrades")
-
-    def create_leaderboard_tab(self):
-        """Создает вкладку Leaderboard"""
-        leaderboard_widget = QWidget()
-        leaderboard_widget.setObjectName("leaderboard_tab")
-
-        layout = QVBoxLayout(leaderboard_widget)
-
-        # Пример содержимого для вкладки Leaderboard
-        title_label = QLabel("Leaderboard Tab")
-        title_label.setAlignment(Qt.AlignCenter)
-        title_label.setStyleSheet("font-size: 18px; font-weight: bold; margin: 20px;")
-
-        # Пример таблицы лидеров
-        leaderboard_frame = QFrame()
-        leaderboard_frame.setObjectName("leaderboard_frame")
-        leaderboard_layout = QVBoxLayout(leaderboard_frame)
-
-        for i in range(1, 6):
-            player_label = QLabel(f"{i}. Player{i} - {1000 - i * 100} points")
-            player_label.setStyleSheet("padding: 5px; margin: 2px;")
-            leaderboard_layout.addWidget(player_label)
-
-        layout.addWidget(title_label)
-        layout.addWidget(leaderboard_frame)
-        layout.addStretch()
-
-        self.tab_widget.addTab(leaderboard_widget, "Leaderboard")
+    def _delete_layout(self, layout: QVBoxLayout) -> None:
+        while layout.count():
+            child = layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+            elif child.layout():
+                self._delete_layout(child.layout())
+        QWidget().setLayout(layout)
 
     def on_click(self) -> None:
         self.clicks += 1
         self.total_label.setText(f"Total Clicks: {self.clicks}")
+
+    def login(self) -> None:
+        def on_success(_=None) -> None:
+            globals.account = (username, password)
+            write_account_data(username, password)
+
+            show_info("Info", "Login successful!")
+            update_account_tab()
+
+        username: str = self.username_entry.text()
+        password: str = self.password_entry.text()
+
+        status: bool | str = check_all(username, password)
+
+        if status is True:
+            password = hash_password(password)
+            authenticate("login", username, password, on_success)
+        else:
+            show_error("Error", status)
+
+    def register(self) -> None:
+        def on_success(_=None) -> None:
+            self.username_entry.setText("")
+            self.password_entry.setText("")
+
+            show_info("Info", "Registration successful!")
+
+        username: str = self.username_entry.text()
+        password: str = self.password_entry.text()
+
+        status: bool | str = check_all(username, password)
+
+        if status is True:
+            password = hash_password(password)
+            authenticate("register", username, password, on_success)
+        else:
+            show_error("Error", status)
+
+    @staticmethod
+    def logout() -> None:
+        write_account_data(None, None)
+        globals.account = None
+        update_account_tab()
