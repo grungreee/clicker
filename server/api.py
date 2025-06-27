@@ -1,3 +1,4 @@
+import time
 import mysql.connector
 import os
 from fastapi import FastAPI, HTTPException
@@ -13,6 +14,10 @@ class User(BaseModel):
 class UserStats(BaseModel):
     clicks: int
     camel_coins: int
+
+
+class SyncData(BaseModel):
+    delta_clicks: int
 
 
 class MessageResponse(BaseModel):
@@ -37,7 +42,8 @@ cursor.execute(
     "username VARCHAR(255) PRIMARY KEY,"
     "password VARCHAR(255) NOT NULL,"
     "clicks INTEGER DEFAULT 0,"
-    "camel_coins INTEGER DEFAULT 0"
+    "camel_coins INTEGER DEFAULT 0,"
+    "last_sync_time INTEGER DEFAULT 0"
     ")"
 )
 
@@ -78,3 +84,24 @@ async def get_data(user: User) -> UserStats:
     stats = cursor.fetchone()
 
     return UserStats(clicks=stats[0], camel_coins=stats[1])
+
+
+@app.post("/sync_data")
+async def sync_data(user: User, stats: SyncData) -> UserStats:
+    cursor.execute(
+        "SELECT COUNT(*) FROM users WHERE username = %s AND password = %s", (user.username, user.password))
+    if cursor.fetchone()[0] == 0:
+        raise HTTPException(status_code=400, detail="Incorrect username or password")
+
+    cursor.execute(
+        "SELECT clicks, camel_coins, last_sync_time FROM users WHERE username = %s", (user.username,)
+    )
+    clicks, coins, last_sync_time = cursor.fetchone()
+
+    delta_clicks = min((time.time() - last_sync_time) * 35, stats.delta_clicks)
+
+    cursor.execute("UPDATE users SET clicks = %s, camel_coins = %s, last_sync_time = %s WHERE username = %s",
+                   (clicks + delta_clicks, coins + delta_clicks, int(time.time()), user.username))
+    db.commit()
+
+    return UserStats(clicks=clicks + delta_clicks, camel_coins=coins + delta_clicks)

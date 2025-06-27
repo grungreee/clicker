@@ -1,21 +1,32 @@
 import globals
+import threading
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QPushButton, QFrame, QTabWidget, QLabel,
                              QSizePolicy, QLineEdit)
-from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtCore import Qt, QSize, QTimer
 from utils.file_operations import write_account_data, hash_password, check_all
-from utils.requests import authenticate
-from utils.handle_signals import show_info, show_error, update_account_tab
+from utils.requests import authenticate, do_request
+from utils.handle_signals import show_info, show_error, update_account_tab, start_sync, stop_sync
 
 
 class Clicker(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
+
+        self.sync_timer = QTimer()
+        self.sync_timer.timeout.connect(lambda: threading.Thread(target=self.sync_data).start())  # type: ignore
+
+        self.coins_label = None
+        self.per_sec_label = None
         self.total_label = None
-        self.clicks: int = 0
         self.username_entry = None
         self.password_entry = None
+
+        self.camel_coins: int = 0
+        self.server_clicks: int = 0
+        self.local_clicks: int = 0
+        self.delta_clicks: int = 0
 
         self.setWindowTitle("Camel Clicker")
         self.setGeometry(100, 100, 700, 500)
@@ -84,13 +95,13 @@ class Clicker(QMainWindow):
         self.total_label.setAlignment(Qt.AlignCenter)
         stats_layout.addWidget(self.total_label)
 
-        coins_label = QLabel("Total CamelCoins: 0")
-        coins_label.setAlignment(Qt.AlignCenter)
-        stats_layout.addWidget(coins_label)
+        self.coins_label = QLabel("Total CamelCoins: 0")
+        self.coins_label.setAlignment(Qt.AlignCenter)
+        stats_layout.addWidget(self.coins_label)
 
-        per_sec_label = QLabel("CamelCoins per seconds: 0")
-        per_sec_label.setAlignment(Qt.AlignCenter)
-        stats_layout.addWidget(per_sec_label)
+        self.per_sec_label = QLabel("CamelCoins per seconds: 0")
+        self.per_sec_label.setAlignment(Qt.AlignCenter)
+        stats_layout.addWidget(self.per_sec_label)
         stats_layout.addStretch()
 
         clicker_frame = QFrame()
@@ -157,7 +168,7 @@ class Clicker(QMainWindow):
             register_button.clicked.connect(self.register)  # type: ignore
             buttons_layout.addWidget(register_button)
         else:
-            username_label = QLabel(f"Logged in as: {globals.account[0]}")
+            username_label = QLabel(f"Logged in as: {globals.account["username"]}")
             username_label.setAlignment(Qt.AlignCenter)
             account_layout.addWidget(username_label)
 
@@ -187,13 +198,41 @@ class Clicker(QMainWindow):
         QWidget().setLayout(layout)
 
     def on_click(self) -> None:
-        self.clicks += 1
-        self.total_label.setText(f"Total Clicks: {self.clicks}")
+        self.local_clicks += 1
+        self.delta_clicks += 1
+        self.camel_coins += 1
+
+        self.total_label.setText(f"Total Clicks: {self.local_clicks}")
+        self.coins_label.setText(f"Total CamelCoins: {self.camel_coins}")
+
+    def sync_data(self, background: bool = True) -> None:
+        data: dict = {
+            "user": globals.account,
+            "stats": {
+                "delta_clicks": self.delta_clicks
+            }
+        }
+
+        self.delta_clicks = 0
+        response: tuple[int, dict] = do_request("sync_data", data, background=background)
+
+        if response[0] == 200:
+            server_stats: dict = response[1]
+
+            self.server_clicks = server_stats["clicks"] + self.delta_clicks
+            self.local_clicks = self.server_clicks
+
+            self.camel_coins = server_stats["camel_coins"] + self.delta_clicks
+
+            self.total_label.setText(f"Total Clicks: {self.local_clicks}")
+            self.coins_label.setText(f"Total CamelCoins: {self.camel_coins}")
 
     def login(self) -> None:
         def on_success(_=None) -> None:
-            globals.account = (username, password)
+            globals.account = {"username": username, "password": password}
             write_account_data(username, password)
+            self.sync_data(background=False)
+            start_sync()
 
             show_info("Info", "Login successful!")
             update_account_tab()
@@ -229,6 +268,7 @@ class Clicker(QMainWindow):
 
     @staticmethod
     def logout() -> None:
+        stop_sync()
         write_account_data(None, None)
         globals.account = None
         update_account_tab()

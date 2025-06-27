@@ -1,28 +1,34 @@
+import json
 import threading
 import requests as rq
 from typing import Callable, Literal
 from gui.dialogs import show_confirm_dialog
-from utils.handle_signals import show_error, show_spinner, close_spinner, update_account_tab
+from utils.handle_signals import show_error, show_spinner, close_spinner
 
 __local__: bool = True
 
 url: str = "http://127.0.0.1:8000" if __local__ else "https://clicker-xnay.onrender.com"
 
 
-def do_request(endpoint: str, data: dict = None) -> tuple | None:
+def do_request(endpoint: str, data: dict = None, background: bool = False) -> tuple | None:
     try:
+        if not background:
+            show_spinner()
         response: rq.Response = rq.post(f"{url}/{endpoint}", json=data)
 
         if response.status_code != 200:
             show_error("Error", response.json()["detail"])
 
         return response.status_code, response.json()
-    except rq.exceptions.ConnectionError:
+    except (rq.exceptions.ConnectionError, json.decoder.JSONDecodeError):
         show_error("Error", "Failed to connect to the server (servers are currently down).")
         return None
     except Exception as e:
         show_error(f"{type(e).__name__}", f"Error: {e}")
         return None
+    finally:
+        if not background:
+            close_spinner()
 
 
 def authenticate(type_: Literal["login", "register"], username: str, password: str, on_success: Callable | None = None,
@@ -33,11 +39,8 @@ def authenticate(type_: Literal["login", "register"], username: str, password: s
             "password": password
         }
 
-        show_spinner()
-
         def request():
             response = do_request(type_, data)
-            close_spinner()
             if response is not None:
                 if response[0] == 200:
                     if on_success is not None:

@@ -2,9 +2,9 @@ import os
 import json
 import hashlib
 import string
-
 import globals
 from utils.requests import authenticate
+from utils.handle_signals import start_sync
 
 
 def get_data() -> dict:
@@ -40,7 +40,9 @@ def check_data_file() -> None:
             password: str = data["account"]["password"]
 
             def on_success(_) -> None:
-                globals.account = (username, password)
+                globals.account = {"username": username, "password": password}
+                globals.window.sync_data(background=False)
+                start_sync()
 
             def on_error(_) -> None:
                 os.remove("data.json")

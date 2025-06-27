@@ -10,6 +10,8 @@ class RequestSignals(QObject):
     show_spinner_signal = pyqtSignal()
     close_spinner_signal = pyqtSignal()
     update_account_signal = pyqtSignal()
+    start_sync_signal = pyqtSignal()
+    stop_sync_signal = pyqtSignal()
 
 
 def handle_signals() -> None:
@@ -18,6 +20,8 @@ def handle_signals() -> None:
     globals.request_signals.show_spinner_signal.connect(show_spinner_overlay)
     globals.request_signals.close_spinner_signal.connect(close_spinner_overlay)
     globals.request_signals.update_account_signal.connect(globals.window.update_account_tab)
+    globals.request_signals.start_sync_signal.connect(lambda: globals.window.sync_timer.start(4000))
+    globals.request_signals.stop_sync_signal.connect(globals.window.sync_timer.stop)
 
 
 def show_error(title: str, text: str) -> None:
@@ -38,3 +42,11 @@ def close_spinner() -> None:
 
 def update_account_tab() -> None:
     globals.request_signals.update_account_signal.emit()
+
+
+def start_sync() -> None:
+    globals.request_signals.start_sync_signal.emit()
+
+
+def stop_sync() -> None:
+    globals.request_signals.stop_sync_signal.emit()
