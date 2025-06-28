@@ -8,7 +8,7 @@ from PyQt5.QtCore import Qt, QSize, QTimer
 from utils.file_operations import write_account_data, hash_password, check_all
 from utils.requests import authenticate, do_request
 from utils.handle_signals import (show_info, show_error, update_account_tab,
-                                  update_upgrades_tab, start_sync, stop_sync, load_upgrades)
+                                  start_sync, stop_sync, load_upgrades)
 
 
 class Clicker(QMainWindow):
@@ -28,11 +28,15 @@ class Clicker(QMainWindow):
         self.multiplayer_layout = None
 
         self.camel_coins: int = 0
+
         self.server_clicks: int = 0
         self.local_clicks: int = 0
         self.delta_clicks: int = 0
 
-        self.upgrades: dict = {}
+        self.local_upgrades: dict = {}
+        self.all_upgrades: dict = {}
+        self.delta_upgrades: dict = {}
+        self.server_upgrades: dict = {}
 
         self.setWindowIcon(QIcon("assets/camel.png"))
         self.setWindowTitle("Camel Clicker")
@@ -65,8 +69,6 @@ class Clicker(QMainWindow):
     def on_tab_changed(self, index: int) -> None:
         if self.tab_widget.tabText(index) == "Account":
             update_account_tab()
-        elif self.tab_widget.tabText(index) == "Upgrades":
-            update_upgrades_tab()
 
     def create_clicker_tab(self):
         clicker_widget = QWidget()
@@ -162,25 +164,19 @@ class Clicker(QMainWindow):
         self.clicks_layout.addWidget(clicks_label)
 
         if globals.account is not None:
-            threading.Thread(target=self.get_upgrades).start()
-
-    @staticmethod
-    def get_upgrades() -> None:
-        response = do_request("get_upgrades", data=globals.account, background=False)
-
-        if response[0] == 200:
-            user_upgrades: dict = response[1]["user_upgrades"]
-            all_upgrades: dict = response[1]["all_upgrades"]
-
-            load_upgrades(user_upgrades, all_upgrades)
+            threading.Thread(target=lambda: self.sync_data(background=False)).start()
 
     def load_upgrades(self, user_upgrades: dict, all_upgrades: dict) -> None:
+        self.clear_layout(self.clicks_layout)
+        self.clear_layout(self.multiplayer_layout)
+
         for id_, upgrade in all_upgrades.items():
             layout = QHBoxLayout()
             layout.setSpacing(10)
 
             button = QPushButton(f"{upgrade["name"]}"
-                                 f"{f"({user_upgrades[id_]["count"]} obtained)" if id_ in user_upgrades else ""}")
+                                 f"{f"({user_upgrades[id_]} obtained)" if id_ in user_upgrades else ""}")
+            button.clicked.connect(lambda _, upgrade_id=id_: self.buy_upgrade(upgrade_id))  # type: ignore
             button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
             label = QLabel(f"Price: {upgrade['cost']} 🪙")
@@ -196,6 +192,18 @@ class Clicker(QMainWindow):
                 self.clicks_layout.addLayout(layout)
             elif upgrade["type"] == "auto":
                 self.multiplayer_layout.addLayout(layout)
+
+    def update_upgrades_tab(self) -> None:
+        for i in range(self.tab_widget.count()):
+            if self.tab_widget.tabText(i) == "Upgrades":
+                upgrades_widget = self.tab_widget.widget(i)
+
+                old_layout = upgrades_widget.layout()
+                if old_layout is not None:
+                    self._delete_layout(old_layout)
+
+                self.create_upgrades_tab_content(upgrades_widget)
+                break
 
     def create_account_tab(self) -> None:
         account_widget = QWidget()
@@ -265,18 +273,6 @@ class Clicker(QMainWindow):
                 self.create_account_tab_content(account_widget)
                 break
 
-    def update_upgrades_tab(self) -> None:
-        for i in range(self.tab_widget.count()):
-            if self.tab_widget.tabText(i) == "Upgrades":
-                upgrades_widget = self.tab_widget.widget(i)
-
-                old_layout = upgrades_widget.layout()
-                if old_layout is not None:
-                    self._delete_layout(old_layout)
-
-                self.create_upgrades_tab_content(upgrades_widget)
-                break
-
     def clear_layout(self, layout):
         while layout.count():
             child = layout.takeAt(0)
@@ -306,23 +302,42 @@ class Clicker(QMainWindow):
         data: dict = {
             "user": globals.account,
             "stats": {
-                "delta_clicks": self.delta_clicks
+                "delta_clicks": self.delta_clicks,
+                "delta_upgrades": self.delta_upgrades
             }
         }
 
         self.delta_clicks = 0
+        self.delta_upgrades = {}
         response: tuple[int, dict] = do_request("sync_data", data, background=background)
 
         if response[0] == 200:
             server_stats: dict = response[1]
 
+            self.all_upgrades = server_stats["all_upgrades"]
             self.server_clicks = server_stats["clicks"] + self.delta_clicks
             self.local_clicks = self.server_clicks
+
+            self.server_upgrades = server_stats["user_upgrades"]
+            self.local_upgrades = self.server_upgrades
 
             self.camel_coins = server_stats["camel_coins"] + self.delta_clicks
 
             self.total_label.setText(f"Total Clicks: {self.local_clicks}")
             self.coins_label.setText(f"CamelCoins: {self.camel_coins} 🪙")
+            load_upgrades(self.server_upgrades, self.all_upgrades)
+
+    def buy_upgrade(self, upgrade_id: str) -> None:
+        cost = self.all_upgrades[upgrade_id]["cost"]
+        if cost <= self.camel_coins:
+            self.delta_upgrades[upgrade_id] = self.delta_upgrades.get(upgrade_id, 0) + 1
+            self.camel_coins -= cost
+
+            self.local_upgrades[upgrade_id] = self.local_upgrades.get(upgrade_id, 0) + 1
+
+            load_upgrades(self.local_upgrades, self.all_upgrades)
+        else:
+            show_error("Warn", "Not enough CamelCoins 🪙 to buy this upgrade")
 
     def login(self) -> None:
         def on_success(_=None) -> None:

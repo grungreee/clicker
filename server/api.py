@@ -11,11 +11,6 @@ class User(BaseModel):
     password: str
 
 
-class UserStats(BaseModel):
-    clicks: int
-    camel_coins: int
-
-
 class SyncData(BaseModel):
     delta_clicks: int
 
@@ -27,6 +22,11 @@ class MessageResponse(BaseModel):
 class UpgradesResponse(BaseModel):
     user_upgrades: dict
     all_upgrades: dict
+
+
+class UserStats(UpgradesResponse):
+    clicks: int
+    camel_coins: int
 
 
 # uvicorn server.api:app --host 0.0.0.0 --port 8000
@@ -52,7 +52,6 @@ cursor.execute(
     ")"
 )
 
-cursor.execute("DROP TABLE IF EXISTS upgrades")
 cursor.execute("CREATE TABLE IF NOT EXISTS upgrades "
                "(id INT PRIMARY KEY AUTO_INCREMENT, "
                "name VARCHAR(50) NOT NULL, "
@@ -121,58 +120,35 @@ async def login(user: User) -> MessageResponse:
     return MessageResponse(message="Login successful!")
 
 
-@app.post("/get_data")
-async def get_data(user: User) -> UserStats:
-    check_account(user.username, user.password)
-
-    cursor.execute("SELECT clicks, camel_coins FROM users WHERE username = %s", (user.username,))
-    stats = cursor.fetchone()
-
-    return UserStats(clicks=stats[0], camel_coins=stats[1])
-
-
 @app.post("/sync_data")
 async def sync_data(user: User, stats: SyncData) -> UserStats:
     check_account(user.username, user.password)
 
-    cursor.execute(
-        "SELECT clicks, camel_coins, last_sync_time FROM users WHERE username = %s", (user.username,)
-    )
+    cursor.execute("SELECT clicks, camel_coins, last_sync_time FROM users WHERE username = %s",
+                   (user.username,))
     clicks, coins, last_sync_time = cursor.fetchone()
-
     delta_clicks = min((int(time.time()) - last_sync_time) * 35, stats.delta_clicks)
-
     cursor.execute("UPDATE users SET clicks = %s, camel_coins = %s, last_sync_time = %s WHERE username = %s",
                    (clicks + delta_clicks, coins + delta_clicks, int(time.time()), user.username))
     db.commit()
-    return UserStats(clicks=clicks + delta_clicks, camel_coins=coins + delta_clicks)
-
-
-@app.post("/get_upgrades")
-async def get_upgrades(user: User) -> UpgradesResponse:
-    check_account(user.username, user.password)
 
     cursor.execute("""
-        SELECT u.id, u.name, u.cost, u.value, u.type, uu.count
-        FROM upgrades u
-        JOIN user_upgrades uu ON u.id = uu.upgrade_id
-        WHERE uu.username = %s
-    """, (user.username,))
+            SELECT u.id, uu.count
+            FROM upgrades u
+            JOIN user_upgrades uu ON u.id = uu.upgrade_id
+            WHERE uu.username = %s
+        """, (user.username,))
 
-    bought = cursor.fetchall()
-    user_upgrades_dict = {}
-
-    for id_, name, cost, value, type_, count in bought:
-        user_upgrades_dict[id_] = {
-            "name": name,
-            "cost": cost,
-            "value": value,
-            "type": type_,
-            "count": count
-        }
+    user_upgrades = cursor.fetchall()
 
     cursor.execute("SELECT id, name, cost, value, type FROM upgrades")
     all_upgrades = cursor.fetchall()
+
+    user_upgrades_dict = {
+        id_: count
+        for id_, count in user_upgrades
+    }
+
     all_upgrades_dict = {
         id_: {
             "name": name,
@@ -183,5 +159,5 @@ async def get_upgrades(user: User) -> UpgradesResponse:
         for id_, name, cost, value, type_ in all_upgrades
     }
 
-    return UpgradesResponse(user_upgrades=user_upgrades_dict, all_upgrades=all_upgrades_dict)
-
+    return UserStats(clicks=clicks + delta_clicks, camel_coins=coins + delta_clicks,
+                     user_upgrades=user_upgrades_dict, all_upgrades=all_upgrades_dict)
