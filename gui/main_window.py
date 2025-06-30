@@ -33,9 +33,9 @@ class Clicker(QMainWindow):
         self.local_clicks: int = 0
         self.delta_clicks: int = 0
 
-        self.local_upgrades: dict = {}
         self.all_upgrades: dict = {}
         self.delta_upgrades: dict = {}
+        self.local_upgrades: dict = {}
         self.server_upgrades: dict = {}
 
         self.setWindowIcon(QIcon("assets/camel.png"))
@@ -100,7 +100,7 @@ class Clicker(QMainWindow):
         self.total_label.setAlignment(Qt.AlignLeft)
         stats_layout.addWidget(self.total_label)
 
-        self.coins_label = QLabel("Total CamelCoins: 0 🪙")
+        self.coins_label = QLabel("CamelCoins: 0 🪙")
         self.coins_label.setAlignment(Qt.AlignLeft)
         stats_layout.addWidget(self.coins_label)
 
@@ -291,8 +291,8 @@ class Clicker(QMainWindow):
         QWidget().setLayout(layout)
 
     def on_click(self) -> None:
-        self.local_clicks += 1
         self.delta_clicks += 1
+        self.local_clicks += 1
         self.camel_coins += 1
 
         self.total_label.setText(f"Total Clicks: {self.local_clicks}")
@@ -309,32 +309,33 @@ class Clicker(QMainWindow):
 
         self.delta_clicks = 0
         self.delta_upgrades = {}
+
         response: tuple[int, dict] = do_request("sync_data", data, background=background)
 
         if response[0] == 200:
             server_stats: dict = response[1]
 
-            self.all_upgrades = server_stats["all_upgrades"]
-            self.server_clicks = server_stats["clicks"] + self.delta_clicks
-            self.local_clicks = self.server_clicks
+            self.server_clicks = server_stats["clicks"]
+            self.local_clicks = self.server_clicks + self.delta_clicks
 
+            self.all_upgrades = server_stats["all_upgrades"]
             self.server_upgrades = server_stats["user_upgrades"]
-            self.local_upgrades = self.server_upgrades
+            self.local_upgrades = self.server_upgrades.copy()
 
             self.camel_coins = server_stats["camel_coins"] + self.delta_clicks
 
             self.total_label.setText(f"Total Clicks: {self.local_clicks}")
             self.coins_label.setText(f"CamelCoins: {self.camel_coins} 🪙")
-            load_upgrades(self.server_upgrades, self.all_upgrades)
+            load_upgrades(self.local_upgrades, self.all_upgrades)
 
     def buy_upgrade(self, upgrade_id: str) -> None:
         cost = self.all_upgrades[upgrade_id]["cost"]
         if cost <= self.camel_coins:
             self.delta_upgrades[upgrade_id] = self.delta_upgrades.get(upgrade_id, 0) + 1
+            self.local_upgrades[upgrade_id] = self.local_upgrades.get(upgrade_id, 0) + 1
             self.camel_coins -= cost
 
-            self.local_upgrades[upgrade_id] = self.local_upgrades.get(upgrade_id, 0) + 1
-
+            self.coins_label.setText(f"CamelCoins: {self.camel_coins} 🪙")
             load_upgrades(self.local_upgrades, self.all_upgrades)
         else:
             show_error("Warn", "Not enough CamelCoins 🪙 to buy this upgrade")
@@ -344,7 +345,7 @@ class Clicker(QMainWindow):
             globals.account = {"username": username, "password": password}
             write_account_data(username, password)
             self.sync_data(background=False)
-            start_sync()
+            start_sync(4000)
 
             show_info("Info", "Login successful!")
             update_account_tab()

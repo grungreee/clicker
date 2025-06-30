@@ -42,7 +42,7 @@ def check_data_file() -> None:
             def on_success(_) -> None:
                 globals.account = {"username": username, "password": password}
                 globals.window.sync_data(background=False)
-                start_sync()
+                start_sync(4000)
 
             def on_error(_) -> None:
                 os.remove("data.json")
