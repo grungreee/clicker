@@ -16,17 +16,20 @@ class Clicker(QMainWindow):
         super().__init__()
 
         self.sync_timer = QTimer()
-        self.sync_timer.timeout.connect(lambda: threading.Thread(target=self.sync_data).start())  # type: ignore
+        self.sync_timer.timeout.connect(self.sync_timer_callback)  # type: ignore
 
         self.prestige = None
-        self.coins_label = None
+        self.coins_label_clicker = None
+        self.coins_label_upgrades = None
         self.per_sec_label = None
         self.total_label = None
         self.username_entry = None
         self.password_entry = None
         self.clicks_layout = None
         self.multiplayer_layout = None
-
+        
+        self.syncing: bool = False
+        
         self.camel_coins: int = 0
 
         self.server_clicks: int = 0
@@ -57,14 +60,13 @@ class Clicker(QMainWindow):
         self.create_account_tab()
 
         main_layout.addWidget(self.tab_widget)
-        self.load_stylesheet_from_file()
 
-    def load_stylesheet_from_file(self) -> None:
-        try:
-            with open('style.css', 'r', encoding='utf-8') as file:
-                self.setStyleSheet(file.read())
-        except FileNotFoundError:
-            print("style.css file is not found")
+        with open('style.css', 'r', encoding='utf-8') as file:
+            self.setStyleSheet(file.read())
+
+    def sync_timer_callback(self):
+        if (self.delta_upgrades or self.delta_clicks) and not self.syncing:
+            threading.Thread(target=self.sync_data).start()
 
     def on_tab_changed(self, index: int) -> None:
         if self.tab_widget.tabText(index) == "Account":
@@ -100,9 +102,9 @@ class Clicker(QMainWindow):
         self.total_label.setAlignment(Qt.AlignLeft)
         stats_layout.addWidget(self.total_label)
 
-        self.coins_label = QLabel("CamelCoins: 0 🪙")
-        self.coins_label.setAlignment(Qt.AlignLeft)
-        stats_layout.addWidget(self.coins_label)
+        self.coins_label_clicker = QLabel("CamelCoins: 0 🪙")
+        self.coins_label_clicker.setAlignment(Qt.AlignLeft)
+        stats_layout.addWidget(self.coins_label_clicker)
 
         self.per_sec_label = QLabel("CamelCoins per seconds: 0 🪙")
         self.per_sec_label.setAlignment(Qt.AlignLeft)
@@ -135,9 +137,17 @@ class Clicker(QMainWindow):
         main_layout.setContentsMargins(10, 10, 5, 5)
         upgrades_widget.setLayout(main_layout)
 
+        upper_layout = QHBoxLayout()
+        upper_layout.setContentsMargins(0, 5, 0, 0)
+        main_layout.addLayout(upper_layout)
+
         title_label = QLabel("Upgrades")
         title_label.setAlignment(Qt.AlignLeft)
-        main_layout.addWidget(title_label)
+        upper_layout.addWidget(title_label)
+
+        self.coins_label_upgrades = QLabel(f"CamelCoins: {self.camel_coins} 🪙")
+        self.coins_label_upgrades.setAlignment(Qt.AlignRight)
+        upper_layout.addWidget(self.coins_label_upgrades)
 
         content_layout = QHBoxLayout()
         content_layout.setContentsMargins(0, 10, 5, 5)
@@ -175,14 +185,14 @@ class Clicker(QMainWindow):
             layout.setSpacing(10)
 
             button = QPushButton(f"{upgrade["name"]}"
-                                 f"{f"({user_upgrades[id_]} obtained)" if id_ in user_upgrades else ""}")
+                                 f"{f" ({user_upgrades[id_]} obtained)" if id_ in user_upgrades else ""}")
             button.clicked.connect(lambda _, upgrade_id=id_: self.buy_upgrade(upgrade_id))  # type: ignore
             button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
-            label = QLabel(f"Price: {upgrade['cost']} 🪙")
+            label = QLabel(f"{upgrade['cost']} 🪙")
 
             label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            label.setFixedWidth(200)
+            label.setFixedWidth(130)
             label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
 
             layout.addWidget(button)
@@ -296,9 +306,12 @@ class Clicker(QMainWindow):
         self.camel_coins += 1
 
         self.total_label.setText(f"Total Clicks: {self.local_clicks}")
-        self.coins_label.setText(f"CamelCoins: {self.camel_coins} 🪙")
+        self.coins_label_clicker.setText(f"CamelCoins: {self.camel_coins} 🪙")
+        self.coins_label_upgrades.setText(f"CamelCoins: {self.camel_coins} 🪙")
 
     def sync_data(self, background: bool = True) -> None:
+        self.syncing = True
+
         data: dict = {
             "user": globals.account,
             "stats": {
@@ -310,6 +323,8 @@ class Clicker(QMainWindow):
         self.delta_clicks = 0
         self.delta_upgrades = {}
 
+        print("Syncing data...")
+
         response: tuple[int, dict] = do_request("sync_data", data, background=background)
 
         if response[0] == 200:
@@ -320,13 +335,20 @@ class Clicker(QMainWindow):
 
             self.all_upgrades = server_stats["all_upgrades"]
             self.server_upgrades = server_stats["user_upgrades"]
+
             self.local_upgrades = self.server_upgrades.copy()
+            for upgrade_id, count in self.delta_upgrades.items():
+                self.local_upgrades[upgrade_id] = self.local_upgrades.get(upgrade_id, 0) + count
 
             self.camel_coins = server_stats["camel_coins"] + self.delta_clicks
 
             self.total_label.setText(f"Total Clicks: {self.local_clicks}")
-            self.coins_label.setText(f"CamelCoins: {self.camel_coins} 🪙")
+            self.coins_label_clicker.setText(f"CamelCoins: {self.camel_coins} 🪙")
+            self.coins_label_upgrades.setText(f"CamelCoins: {self.camel_coins} 🪙")
             load_upgrades(self.local_upgrades, self.all_upgrades)
+            print("Data synced successfully!")
+
+        self.syncing = False
 
     def buy_upgrade(self, upgrade_id: str) -> None:
         cost = self.all_upgrades[upgrade_id]["cost"]
@@ -335,7 +357,8 @@ class Clicker(QMainWindow):
             self.local_upgrades[upgrade_id] = self.local_upgrades.get(upgrade_id, 0) + 1
             self.camel_coins -= cost
 
-            self.coins_label.setText(f"CamelCoins: {self.camel_coins} 🪙")
+            self.coins_label_clicker.setText(f"CamelCoins: {self.camel_coins} 🪙")
+            self.coins_label_upgrades.setText(f"CamelCoins: {self.camel_coins} 🪙")
             load_upgrades(self.local_upgrades, self.all_upgrades)
         else:
             show_error("Warn", "Not enough CamelCoins 🪙 to buy this upgrade")

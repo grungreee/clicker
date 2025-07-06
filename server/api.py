@@ -161,13 +161,19 @@ async def sync_data(user: User, stats: SyncData) -> UserStats:
 
     for upgrade_id, count in delta_upgrades.items():
         upgrade_id = int(upgrade_id)
-        for _ in range(count):
+
+        count_bought: int = 0
+
+        for count_bought in range(count):
             if all_upgrades_dict[upgrade_id]["cost"] <= coins:
                 coins -= all_upgrades_dict[upgrade_id]["cost"]
                 user_upgrades_dict[upgrade_id] = user_upgrades_dict.get(upgrade_id, 0) + 1
-                cursor.execute("INSERT INTO user_upgrades (username, upgrade_id, count) VALUES (%s, %s, %s) "
-                               "ON DUPLICATE KEY UPDATE count = count + %s",
-                               (user.username, upgrade_id, 1, 1))
+            else:
+                break
+
+        cursor.execute("INSERT INTO user_upgrades (username, upgrade_id, count) VALUES (%s, %s, %s) "
+                       "ON DUPLICATE KEY UPDATE count = count + %s",
+                       (user.username, upgrade_id, count_bought, count_bought))
 
     cursor.execute("UPDATE users SET clicks = %s, camel_coins = %s, last_sync_time = %s WHERE username = %s",
                    (clicks + delta_clicks, coins, int(time.time()), user.username))
